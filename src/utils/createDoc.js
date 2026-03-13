@@ -1,13 +1,16 @@
-import { addDoc, collection } from "firebase/firestore";
-import { db } from "./firebase";
-import logger from "./logger";
+// src/utils/createDoc.js
+const mysql = require('mysql2');
 
-const createDoc = async (obj, collectionName) => {
-  try {
-    const docRef = await addDoc(collection(db, collectionName), { ...obj });
-  } catch (err) {
-    logger.debug(err);
-  }
+export const createWishlistItem = async (userId, game) => {
+  const connection = await mysql.createConnection({
+    host: 'your-tidb-host',
+    user: 'user',
+    password: 'password',
+    database: 'game_store',
+  });
+  await connection.execute(
+    "INSERT INTO wishlist (user_id, game_id, details) VALUES (?, ?, ?)",
+    [userId, game.id, game.name]
+  );
+  connection.end();
 };
-
-export default createDoc;

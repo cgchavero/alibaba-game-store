@@ -1,8 +1,8 @@
+// src/context/FirestoreContext.jsx
 import { useEffect } from "react";
-import { useReducer, createContext, useContext } from "react";
-import { db } from "../utils/firebase";
+import { useReducer } from "react";
+import tidb from "../utils/tidb";
 import { AuthContext } from "./AuthContext";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 const FirestoreContext = createContext(null);
 
@@ -16,17 +16,12 @@ const FirestoreContextProvider = ({ children }) => {
 
   const reducer = (state, action) => {
     switch (action.type) {
-      case "UPDATE_WISHLIST":
+      case "UPDATE_DATA":
         return {
           ...state,
-          wishlist: action.payload,
-          isLoading: false,
-        };
-      case "UPDATE_ORDERS":
-        return {
-          ...state,
-          orders: action.payload.ordersDocs,
-          cartItems: action.payload.cartItemsDocs[0],
+          wishlist: action.payload.wishlist,
+          cartItems: action.payload.cartItems,
+          orders: action.payload.orders,
           isLoading: false,
         };
       case "UPDATE_IS_LOADING":
@@ -34,54 +29,39 @@ const FirestoreContextProvider = ({ children }) => {
           ...state,
           isLoading: action.payload,
         };
-      case "default":
+      default:
         throw new Error("Unknown action");
     }
   };
 
   const [state, dispatch] = useReducer(reducer, initialState);
   const { user } = useContext(AuthContext);
+
+  const fetchData = async () => {
+    dispatch({ type: "UPDATE_IS_LOADING", payload: true });
+    const [wishlist] = await tidb.query("SELECT * FROM wishlist WHERE user_id = ?", [user?.uid]);
+    const [orders] = await tidb.query("SELECT * FROM orders WHERE user_id = ?", [user?.uid]);
+    dispatch({
+      type: "UPDATE_DATA",
+      payload: {
+        wishlist: wishlist,
+        cartItems: orders.filter(order => !order.isCompleted),
+        orders: orders.filter(order => order.isCompleted),
+      },
+    });
+  };
+
   useEffect(() => {
     if (user) {
-      const wishlistQuery = query(
-        collection(db, "wishlist"),
-        where("user", "==", user?.uid)
-      );
-      const ordersQuery = query(
-        collection(db, "orders"),
-        where("user", "==", user?.uid)
-      );
-
-      const unsubWishlist = onSnapshot(wishlistQuery, (snapshot) => {
-        const data = [];
-        snapshot.docs.forEach((doc) => {
-          data.push(doc);
-        });
-        dispatch({ type: "UPDATE_WISHLIST", payload: data });
-      });
-
-      const unsubOrders = onSnapshot(ordersQuery, (snapshot) => {
-        const ordersDocs = snapshot.docs.filter(
-          (doc) => doc.data().isCompleted == true
-        );
-        const cartItemsDocs = snapshot.docs.filter(
-          (doc) => doc.data().isCompleted == false
-        );
-        dispatch({
-          type: "UPDATE_ORDERS",
-          payload: { ordersDocs: ordersDocs, cartItemsDocs: cartItemsDocs },
-        });
-      });
-
-      return () => {
-        unsubWishlist();
-        unsubOrders();
-      };
+      fetchData();
+      // Poll for updates every 30 seconds
+      const interval = setInterval(fetchData, 30000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
   return (
-    <FirestoreContext.Provider value={{ state: state, dispatch }}>
+    <FirestoreContext.Provider value={{ state }}>
       {children}
     </FirestoreContext.Provider>
   );
